@@ -1,0 +1,199 @@
+import re
+from dataclasses import dataclass, field
+
+from .epub_parser import Chapter, ParsedBook
+from .clippings_parser import Clipping
+
+
+@dataclass
+class MatchedHighlight:
+    text: str
+    clip_type: str
+    location: str
+    page: int | None
+    chapter_title: str | None
+
+
+@dataclass
+class ChapterResult:
+    title: str
+    level: int
+    highlights: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class GenerationResult:
+    title: str
+    author: str
+    chapters: list[ChapterResult]
+    markdown: str
+    stats: dict
+
+
+def _normalize_for_search(text: str) -> str:
+    """Normalize text for fuzzy substring matching."""
+    # Collapse whitespace
+    text = " ".join(text.split())
+    # Lowercase
+    text = text.lower()
+    # Remove fancy quotes and dashes
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    text = text.replace("\u201c", '"').replace("\u201d", '"')
+    text = text.replace("\u2014", "-").replace("\u2013", "-")
+    # Remove non-alphanumeric except spaces (keep apostrophes)
+    text = re.sub(r"[^\w\s']", " ", text)
+    return " ".join(text.split())
+
+
+def _find_highlight_in_chapter(highlight_text: str, chapter_text: str) -> bool:
+    """Check if a highlight's text appears within a chapter's text (fuzzy)."""
+    norm_highlight = _normalize_for_search(highlight_text)
+    norm_chapter = _normalize_for_search(chapter_text)
+
+    if not norm_highlight or not norm_chapter:
+        return False
+
+    # Direct substring match
+    if norm_highlight in norm_chapter:
+        return True
+
+    # Try matching with first and last N words (handles truncated highlights)
+    words = norm_highlight.split()
+    if len(words) >= 6:
+        first_part = " ".join(words[:5])
+        last_part = " ".join(words[-5:])
+        if first_part in norm_chapter and last_part in norm_chapter:
+            return True
+
+    # Try matching a significant portion (80%+ of words)
+    if len(words) >= 4:
+        match_count = sum(1 for w in words if w in norm_chapter)
+        if match_count / len(words) >= 0.8:
+            return True
+
+    return False
+
+
+def _format_location(clipping: Clipping) -> str:
+    """Format location/page info for display."""
+    parts = []
+    if clipping.page:
+        parts.append(f"PAGE {clipping.page}")
+    if clipping.location_start:
+        if clipping.location_end and clipping.location_end != clipping.location_start:
+            parts.append(f"LOCATION {clipping.location_start}-{clipping.location_end}")
+        else:
+            parts.append(f"LOCATION {clipping.location_start}")
+    return " · ".join(parts) if parts else ""
+
+
+def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> GenerationResult:
+    """Match clippings to chapters and generate markdown output."""
+    # Match each clipping to a chapter
+    matched: list[tuple[Clipping, Chapter | None]] = []
+    matched_count = 0
+    orphaned_count = 0
+
+    for clip in clippings:
+        found_chapter = None
+        for chapter in book.chapters:
+            if _find_highlight_in_chapter(clip.text, chapter.text):
+                found_chapter = chapter
+                break
+
+        matched.append((clip, found_chapter))
+        if found_chapter:
+            matched_count += 1
+        else:
+            orphaned_count += 1
+
+    total = len(clippings)
+    match_rate = round((matched_count / total * 100), 1) if total > 0 else 0
+
+    stats = {
+        "total_highlights": total,
+        "matched": matched_count,
+        "orphaned": orphaned_count,
+        "match_rate": match_rate,
+    }
+
+    # Group by chapter
+    chapter_highlights: dict[str, list[tuple[Clipping, Chapter | None]]] = {}
+    orphaned_clips: list[Clipping] = []
+
+    for clip, chapter in matched:
+        if chapter:
+            key = chapter.title
+            if key not in chapter_highlights:
+                chapter_highlights[key] = []
+            chapter_highlights[key].append((clip, chapter))
+        else:
+            orphaned_clips.append(clip)
+
+    # Build chapter results in order
+    chapter_results: list[ChapterResult] = []
+    seen_chapters: set[str] = set()
+
+    for chapter in book.chapters:
+        if chapter.title in chapter_highlights and chapter.title not in seen_chapters:
+            seen_chapters.add(chapter.title)
+            cr = ChapterResult(title=chapter.title, level=chapter.level)
+            for clip, _ in chapter_highlights[chapter.title]:
+                cr.highlights.append({
+                    "text": clip.text,
+                    "type": clip.clip_type,
+                    "location": _format_location(clip),
+                    "page": clip.page,
+                })
+            chapter_results.append(cr)
+
+    # Generate markdown
+    md_lines: list[str] = []
+    md_lines.append(f"# {book.title}")
+    md_lines.append(f"## {book.author}")
+    md_lines.append("")
+
+    for cr in chapter_results:
+        heading = "#" * min(cr.level + 1, 4)
+        md_lines.append(f"{heading} {cr.title}")
+        md_lines.append("")
+        for h in cr.highlights:
+            if h["type"] == "note":
+                md_lines.append(f"- {h['text']}")
+            else:
+                md_lines.append(f'- "{h["text"]}"')
+            meta_parts = []
+            if h["location"]:
+                meta_parts.append(h["location"])
+            label = "ANNOTATION" if h["type"] == "note" else "HIGHLIGHT"
+            meta_parts.append(label)
+            if meta_parts:
+                md_lines.append(f"  {' · '.join(meta_parts)}")
+            md_lines.append("")
+
+    if orphaned_clips:
+        md_lines.append("## Unmatched Highlights")
+        md_lines.append("")
+        for clip in orphaned_clips:
+            if clip.clip_type == "note":
+                md_lines.append(f"- {clip.text}")
+            else:
+                md_lines.append(f'- "{clip.text}"')
+            meta_parts = []
+            loc = _format_location(clip)
+            if loc:
+                meta_parts.append(loc)
+            label = "ANNOTATION" if clip.clip_type == "note" else "HIGHLIGHT"
+            meta_parts.append(label)
+            md_lines.append(f"  {' · '.join(meta_parts)}")
+            md_lines.append("")
+
+    markdown = "\n".join(md_lines).strip() + "\n"
+
+    return GenerationResult(
+        title=book.title,
+        author=book.author,
+        chapters=chapter_results,
+        markdown=markdown,
+        stats=stats,
+    )

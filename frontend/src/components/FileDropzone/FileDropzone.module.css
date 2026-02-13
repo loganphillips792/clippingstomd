@@ -1,0 +1,30 @@
+.wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.dropzone {
+  border: 2px dashed #dee2e6;
+  border-radius: 12px;
+  background: #f8f9fa;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.dropzone:hover {
+  border-color: #228be6;
+  background: #e7f5ff;
+}
+
+.dropzone[data-accept] {
+  border-color: #228be6;
+  background: #e7f5ff;
+}
+
+.dropzone[data-reject] {
+  border-color: #fa5252;
+  background: #fff5f5;
+}

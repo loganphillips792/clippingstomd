@@ -1,0 +1,31 @@
+import type { ConversionResult } from '../types';
+
+const API_BASE = import.meta.env.VITE_API_BASE || '';
+
+export async function convertFiles(
+  epub: File,
+  clippings: File,
+  onProgress?: (pct: number) => void
+): Promise<ConversionResult> {
+  const formData = new FormData();
+  formData.append('epub', epub);
+  formData.append('clippings', clippings);
+
+  onProgress?.(10);
+
+  const response = await fetch(`${API_BASE}/api/convert`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  onProgress?.(80);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Conversion failed' }));
+    throw new Error(error.detail || 'Conversion failed');
+  }
+
+  const data: ConversionResult = await response.json();
+  onProgress?.(100);
+  return data;
+}

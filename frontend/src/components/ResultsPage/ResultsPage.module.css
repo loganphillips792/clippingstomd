@@ -1,0 +1,35 @@
+.page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8f9fa;
+}
+
+.infoBar {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid #e9ecef;
+  flex-shrink: 0;
+}
+
+.panels {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tocPanel {
+  width: 30%;
+  min-width: 240px;
+  max-width: 350px;
+  overflow: hidden;
+}
+
+.previewPanel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}

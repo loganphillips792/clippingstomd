@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from .epub_parser import Chapter, ParsedBook
@@ -32,14 +33,25 @@ class GenerationResult:
 
 def _normalize_for_search(text: str) -> str:
     """Normalize text for fuzzy substring matching."""
+    # Unicode-normalize to decompose fancy characters (e.g. ligatures, accents)
+    text = unicodedata.normalize("NFKC", text)
+    # Strip zero-width and other invisible Unicode characters
+    text = re.sub(r"[\u200b-\u200f\u2028-\u202f\u2060\ufeff]", "", text)
     # Collapse whitespace
     text = " ".join(text.split())
     # Lowercase
     text = text.lower()
-    # Remove fancy quotes and dashes
-    text = text.replace("\u2018", "'").replace("\u2019", "'")
-    text = text.replace("\u201c", '"').replace("\u201d", '"')
-    text = text.replace("\u2014", "-").replace("\u2013", "-")
+    # Normalize ALL common quote variants to ASCII
+    text = text.replace("\u2018", "'").replace("\u2019", "'")   # curly single
+    text = text.replace("\u201c", '"').replace("\u201d", '"')   # curly double
+    text = text.replace("\u201a", "'").replace("\u201e", '"')   # low-9 quotes
+    text = text.replace("\u2039", "'").replace("\u203a", "'")   # angle single
+    text = text.replace("\u00ab", '"').replace("\u00bb", '"')   # guillemets
+    text = text.replace("\u02bc", "'")                          # modifier apostrophe
+    # Normalize ALL dash variants to ASCII hyphen
+    text = text.replace("\u2014", "-").replace("\u2013", "-")   # em/en dash
+    text = text.replace("\u2012", "-").replace("\u2015", "-")   # figure/horizontal
+    text = text.replace("\u00ad", "")                           # soft hyphen
     # Remove non-alphanumeric except spaces (keep apostrophes)
     text = re.sub(r"[^\w\s']", " ", text)
     return " ".join(text.split())
@@ -63,8 +75,9 @@ def _match_score(highlight_text: str, chapter_text: str) -> int:
     """Score how well a highlight matches a chapter.
 
     Returns:
-        2 = direct substring match (best)
-        1 = first+last N words found (good)
+        3 = direct substring match (best)
+        2 = first+last N words found (good, handles truncation)
+        1 = high word overlap (fallback for subtle char differences)
         0 = no match
     """
     norm_highlight = _normalize_for_search(highlight_text)
@@ -75,7 +88,7 @@ def _match_score(highlight_text: str, chapter_text: str) -> int:
 
     # Direct substring match
     if norm_highlight in norm_chapter:
-        return 2
+        return 3
 
     # Try matching with first and last N words (handles truncated highlights)
     words = norm_highlight.split()
@@ -83,7 +96,16 @@ def _match_score(highlight_text: str, chapter_text: str) -> int:
         first_part = " ".join(words[:5])
         last_part = " ".join(words[-5:])
         if first_part in norm_chapter and last_part in norm_chapter:
-            return 1
+            return 2
+
+    # Word-overlap fallback: check if most significant words appear in chapter
+    if len(words) >= 4:
+        significant = [w for w in words if w not in STOP_WORDS and len(w) > 2]
+        if significant:
+            chapter_words = set(norm_chapter.split())
+            found = sum(1 for w in significant if w in chapter_words)
+            if found / len(significant) >= 0.8:
+                return 1
 
     return 0
 
@@ -116,7 +138,7 @@ def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> Generation
             if score > best_score:
                 best_score = score
                 found_chapter = chapter
-                if score == 2:
+                if score == 3:
                     break  # Direct match is the best possible, stop early
 
         matched.append((clip, found_chapter))

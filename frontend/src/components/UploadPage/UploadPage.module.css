@@ -20,6 +20,21 @@
   max-width: 750px;
 }
 
+.notesSection {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e9ecef;
+}
+
+.notesToggle {
+  color: #495057;
+  padding: 4px 0;
+}
+
+.notesToggle:hover {
+  color: #228be6;
+}
+
 .convertBtn {
   min-width: 280px;
   font-size: 1.05rem;

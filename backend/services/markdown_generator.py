@@ -45,17 +45,37 @@ def _normalize_for_search(text: str) -> str:
     return " ".join(text.split())
 
 
-def _find_highlight_in_chapter(highlight_text: str, chapter_text: str) -> bool:
-    """Check if a highlight's text appears within a chapter's text (fuzzy)."""
+STOP_WORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "it", "its", "as", "was", "were",
+    "be", "been", "being", "have", "has", "had", "do", "does", "did",
+    "will", "would", "could", "should", "may", "might", "can", "shall",
+    "not", "no", "nor", "so", "if", "than", "that", "this", "these",
+    "those", "then", "there", "their", "they", "them", "he", "she",
+    "his", "her", "him", "we", "us", "our", "you", "your", "i", "me",
+    "my", "who", "what", "which", "when", "where", "how", "all", "each",
+    "every", "any", "some", "one", "two", "up", "out", "about", "into",
+    "over", "after", "before", "just", "also", "more", "very", "even",
+})
+
+
+def _match_score(highlight_text: str, chapter_text: str) -> int:
+    """Score how well a highlight matches a chapter.
+
+    Returns:
+        2 = direct substring match (best)
+        1 = first+last N words found (good)
+        0 = no match
+    """
     norm_highlight = _normalize_for_search(highlight_text)
     norm_chapter = _normalize_for_search(chapter_text)
 
     if not norm_highlight or not norm_chapter:
-        return False
+        return 0
 
     # Direct substring match
     if norm_highlight in norm_chapter:
-        return True
+        return 2
 
     # Try matching with first and last N words (handles truncated highlights)
     words = norm_highlight.split()
@@ -63,15 +83,9 @@ def _find_highlight_in_chapter(highlight_text: str, chapter_text: str) -> bool:
         first_part = " ".join(words[:5])
         last_part = " ".join(words[-5:])
         if first_part in norm_chapter and last_part in norm_chapter:
-            return True
+            return 1
 
-    # Try matching a significant portion (80%+ of words)
-    if len(words) >= 4:
-        match_count = sum(1 for w in words if w in norm_chapter)
-        if match_count / len(words) >= 0.8:
-            return True
-
-    return False
+    return 0
 
 
 def _format_location(clipping: Clipping) -> str:
@@ -96,10 +110,14 @@ def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> Generation
 
     for clip in clippings:
         found_chapter = None
+        best_score = 0
         for chapter in book.chapters:
-            if _find_highlight_in_chapter(clip.text, chapter.text):
+            score = _match_score(clip.text, chapter.text)
+            if score > best_score:
+                best_score = score
                 found_chapter = chapter
-                break
+                if score == 2:
+                    break  # Direct match is the best possible, stop early
 
         matched.append((clip, found_chapter))
         if found_chapter:
@@ -172,7 +190,17 @@ def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> Generation
             md_lines.append("")
 
     if orphaned_clips:
-        md_lines.append("## Unmatched Highlights")
+        cr = ChapterResult(title="Unmatched Highlights", level=1)
+        for clip in orphaned_clips:
+            cr.highlights.append({
+                "text": clip.text,
+                "type": clip.clip_type,
+                "location": _format_location(clip),
+                "page": clip.page,
+            })
+        chapter_results.append(cr)
+
+        md_lines.append(f"## Unmatched Highlights")
         md_lines.append("")
         for clip in orphaned_clips:
             if clip.clip_type == "note":

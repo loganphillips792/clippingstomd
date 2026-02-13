@@ -88,6 +88,37 @@ def parse_epub(file_bytes: bytes) -> ParsedBook:
     if toc:
         _walk_toc(toc, book, chapters, 1, [0])
 
+    # Merge text from spine items not covered by any TOC entry into the
+    # preceding chapter.  Many EPUBs split content across multiple XHTML
+    # files but only reference some of them from the TOC (e.g. supplementary
+    # "-sup" files).  Without this, highlights in those files can never match.
+    if chapters:
+        toc_hrefs: set[str] = set()
+        for ch in chapters:
+            if ch.href:
+                toc_hrefs.add(ch.href.split("#")[0])
+
+        # Build href -> chapter mapping for quick lookup
+        href_to_chapter: dict[str, Chapter] = {}
+        for ch in chapters:
+            if ch.href:
+                href_to_chapter[ch.href.split("#")[0]] = ch
+
+        # Walk spine in order; for un-referenced items, append text to the
+        # most recent preceding chapter.
+        last_chapter: Chapter | None = None
+        for item_id, _ in book.spine:
+            item = book.get_item_with_id(item_id)
+            if item is None:
+                continue
+            item_href = item.get_name()
+            if item_href in href_to_chapter:
+                last_chapter = href_to_chapter[item_href]
+            elif item_href not in toc_hrefs and last_chapter is not None:
+                extra_text = _extract_text(item.get_content())
+                if extra_text.strip():
+                    last_chapter.text = last_chapter.text + " " + extra_text
+
     # If TOC produced no chapters, fall back to spine order
     if not chapters:
         for i, item in enumerate(book.get_items_of_type(ebooklib.ITEM_DOCUMENT)):

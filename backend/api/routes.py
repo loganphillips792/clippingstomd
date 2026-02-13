@@ -1,21 +1,47 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+import re
+from typing import Optional
+
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from services.epub_parser import parse_epub
-from services.clippings_parser import parse_clippings
+from services.clippings_parser import parse_clippings, Clipping
 from services.markdown_generator import generate_markdown
 
 router = APIRouter(prefix="/api")
 
 
+def _parse_pasted_notes(text: str) -> list[Clipping]:
+    """Parse pasted bullet points into Clipping objects."""
+    notes: list[Clipping] = []
+    for line in text.splitlines():
+        line = line.strip()
+        # Strip leading bullet markers: -, *, •, numbered (1., 2.)
+        line = re.sub(r"^(?:[-*•]\s*|\d+[.)]\s*)", "", line).strip()
+        if not line:
+            continue
+        notes.append(Clipping(
+            book_title="",
+            author="",
+            text=line,
+            clip_type="note",
+            page=None,
+            location_start=None,
+            location_end=None,
+            date=None,
+        ))
+    return notes
+
+
 @router.post("/convert")
-async def convert(epub: UploadFile = File(...), clippings: UploadFile = File(...)):
-    """Convert an epub + Kindle clippings into structured markdown."""
-    # Validate file types
+async def convert(
+    epub: UploadFile = File(...),
+    clippings: Optional[UploadFile] = File(None),
+    notes: Optional[str] = Form(None),
+):
+    """Convert an epub + Kindle clippings + pasted notes into structured markdown."""
+    # Validate epub
     if not epub.filename or not epub.filename.lower().endswith(".epub"):
         raise HTTPException(status_code=400, detail="Please upload a valid .epub file")
-
-    if not clippings.filename or not clippings.filename.lower().endswith(".txt"):
-        raise HTTPException(status_code=400, detail="Please upload a valid .txt clippings file")
 
     try:
         epub_bytes = await epub.read()
@@ -23,18 +49,27 @@ async def convert(epub: UploadFile = File(...), clippings: UploadFile = File(...
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to parse epub file: {e}")
 
-    try:
-        clippings_bytes = await clippings.read()
-        clippings_text = clippings_bytes.decode("utf-8", errors="replace")
-        all_clippings = parse_clippings(clippings_text, filter_title=book.title)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse clippings file: {e}")
+    all_clippings: list[Clipping] = []
+
+    # Parse clippings file if provided
+    if clippings and clippings.filename:
+        try:
+            clippings_bytes = await clippings.read()
+            clippings_text = clippings_bytes.decode("utf-8", errors="replace")
+            all_clippings = parse_clippings(clippings_text, filter_title=book.title)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse clippings file: {e}")
+
+    # Parse pasted notes if provided
+    pasted_notes: list[Clipping] = []
+    if notes and notes.strip():
+        pasted_notes = _parse_pasted_notes(notes)
+        all_clippings.extend(pasted_notes)
 
     if not all_clippings:
         raise HTTPException(
             status_code=400,
-            detail=f"No clippings found matching the book title \"{book.title}\". "
-                   "Make sure your clippings file contains highlights for this book.",
+            detail="No highlights or notes provided. Upload a clippings file or paste some notes.",
         )
 
     result = generate_markdown(book, all_clippings)

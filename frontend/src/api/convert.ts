@@ -4,12 +4,18 @@ const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export async function convertFiles(
   epub: File,
-  clippings: File,
+  clippings: File | null,
+  notes?: string,
   onProgress?: (pct: number) => void
 ): Promise<ConversionResult> {
   const formData = new FormData();
   formData.append('epub', epub);
-  formData.append('clippings', clippings);
+  if (clippings) {
+    formData.append('clippings', clippings);
+  }
+  if (notes?.trim()) {
+    formData.append('notes', notes);
+  }
 
   onProgress?.(10);
 

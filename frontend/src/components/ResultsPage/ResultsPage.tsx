@@ -15,9 +15,10 @@ interface ResultsPageProps {
 
 export function ResultsPage({ result, onBack }: ResultsPageProps) {
   const [activeChapter, setActiveChapter] = useState(0);
+  const [markdown, setMarkdown] = useState(result.markdown);
 
   const handleDownload = () => {
-    const blob = new Blob([result.markdown], { type: 'text/markdown' });
+    const blob = new Blob([markdown], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -27,7 +28,7 @@ export function ResultsPage({ result, onBack }: ResultsPageProps) {
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(result.markdown);
+    navigator.clipboard.writeText(markdown);
   };
 
   return (
@@ -91,7 +92,11 @@ export function ResultsPage({ result, onBack }: ResultsPageProps) {
           />
         </div>
         <div className={classes.previewPanel}>
-          <MarkdownPreview markdown={result.markdown} />
+          <MarkdownPreview
+            markdown={markdown}
+            activeChapterTitle={result.chapters[activeChapter]?.title}
+            onEdit={setMarkdown}
+          />
         </div>
       </div>
 

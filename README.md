@@ -7,8 +7,7 @@ Upload an EPUB file and your Kindle `My Clippings.txt` to generate a clean Markd
 ## Quick Start (Docker)
 
 ```bash
-docker build -t kindlenotes .
-docker run -p 8000:8000 kindlenotes
+docker build -t kindlenotes . && docker run -p 8000:8000 kindlenotes
 ```
 
 Then open [http://localhost:8000](http://localhost:8000).

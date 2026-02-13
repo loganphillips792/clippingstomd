@@ -1,0 +1,23 @@
+.section {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 0 0;
+}
+
+.underline {
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: #228be6;
+  margin-top: 4px;
+}
+
+.grid {
+  max-width: 750px;
+  margin: 0 auto;
+}
+
+.step {
+  padding: 16px 8px;
+}

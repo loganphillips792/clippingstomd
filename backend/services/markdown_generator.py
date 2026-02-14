@@ -189,9 +189,6 @@ def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> Generation
 
     # Generate markdown
     md_lines: list[str] = []
-    md_lines.append(f"# {book.title}")
-    md_lines.append(f"## {book.author}")
-    md_lines.append("")
 
     for cr in chapter_results:
         heading = "#" * min(cr.level + 1, 4)

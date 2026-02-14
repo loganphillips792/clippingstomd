@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Container, Title, Text, Button, Group, Card, Stack, Textarea, Collapse, UnstyledButton } from '@mantine/core';
+import { Container, Title, Text, Button, Group, Card, Stack, Textarea, Collapse, UnstyledButton, Switch } from '@mantine/core';
 import { type FileWithPath } from '@mantine/dropzone';
-import { IconBolt, IconLock, IconNotes, IconChevronDown, IconChevronRight } from '@tabler/icons-react';
+import { IconBolt, IconLock, IconNotes, IconChevronDown, IconChevronRight, IconGitMerge } from '@tabler/icons-react';
 import { FileDropzone } from '../FileDropzone/FileDropzone';
 import { HowItWorks } from '../HowItWorks/HowItWorks';
 import { FeatureCards } from '../FeatureCards/FeatureCards';
 import classes from './UploadPage.module.css';
 
+const MARKDOWN_MIME = ['text/markdown', 'text/plain'];
+
 interface UploadPageProps {
-  onConvert: (epub: File, clippings: File | null, notes?: string) => void;
+  onConvert: (epub: File, clippings: File | null, notes?: string, existingMarkdown?: File, existingMarkdownText?: string) => void;
   loading: boolean;
 }
 
@@ -20,6 +22,9 @@ export function UploadPage({ onConvert, loading }: UploadPageProps) {
   const [clippings, setClippings] = useState<File | null>(null);
   const [notes, setNotes] = useState('');
   const [notesOpen, setNotesOpen] = useState(false);
+  const [mergeMode, setMergeMode] = useState(false);
+  const [existingMd, setExistingMd] = useState<File | null>(null);
+  const [existingMdText, setExistingMdText] = useState('');
 
   const handleEpubDrop = (files: FileWithPath[]) => {
     if (files[0]) setEpub(files[0]);
@@ -29,8 +34,21 @@ export function UploadPage({ onConvert, loading }: UploadPageProps) {
     if (files[0]) setClippings(files[0]);
   };
 
+  const handleExistingMdDrop = (files: FileWithPath[]) => {
+    if (files[0]) setExistingMd(files[0]);
+  };
+
+  const handleMergeModeToggle = (checked: boolean) => {
+    setMergeMode(checked);
+    if (!checked) {
+      setExistingMd(null);
+      setExistingMdText('');
+    }
+  };
+
   const hasInput = clippings || notes.trim();
-  const canConvert = epub && hasInput && !loading;
+  const hasMergeInput = existingMd || existingMdText.trim();
+  const canConvert = epub && hasInput && !loading && (!mergeMode || hasMergeInput);
 
   return (
     <div className={classes.page}>
@@ -72,6 +90,52 @@ export function UploadPage({ onConvert, loading }: UploadPageProps) {
                 onDrop={handleClippingsDrop}
               />
             </Group>
+
+            {/* Merge Mode Section */}
+            <div className={classes.mergeSection}>
+              <Group gap="sm">
+                <IconGitMerge size={16} color="#495057" />
+                <Switch
+                  label="I have an existing markdown file"
+                  checked={mergeMode}
+                  onChange={(e) => handleMergeModeToggle(e.currentTarget.checked)}
+                  size="sm"
+                />
+              </Group>
+              <Collapse in={mergeMode}>
+                <Stack gap="sm" mt={12}>
+                  <FileDropzone
+                    step={3}
+                    title="Upload Existing Markdown"
+                    description="Drop your previously exported .md file"
+                    helper="New highlights will be merged in"
+                    accept={MARKDOWN_MIME}
+                    file={existingMd}
+                    onDrop={handleExistingMdDrop}
+                  />
+                  <Text size="xs" c="dimmed" ta="center">
+                    or paste your markdown below
+                  </Text>
+                  <Textarea
+                    placeholder={"Paste your existing markdown here..."}
+                    minRows={5}
+                    maxRows={12}
+                    autosize
+                    value={existingMdText}
+                    onChange={(e) => setExistingMdText(e.currentTarget.value)}
+                    disabled={!!existingMd}
+                    styles={{
+                      input: { fontFamily: 'monospace', fontSize: 13 },
+                    }}
+                  />
+                  {existingMd && (
+                    <Text size="xs" c="dimmed">
+                      File uploaded — paste field is disabled. Remove the file to paste instead.
+                    </Text>
+                  )}
+                </Stack>
+              </Collapse>
+            </div>
 
             {/* Paste Notes Section */}
             <div className={classes.notesSection}>
@@ -119,7 +183,7 @@ export function UploadPage({ onConvert, loading }: UploadPageProps) {
             leftSection={<IconBolt size={20} />}
             disabled={!canConvert}
             loading={loading}
-            onClick={() => epub && onConvert(epub, clippings, notes || undefined)}
+            onClick={() => epub && onConvert(epub, clippings, notes || undefined, existingMd || undefined, existingMdText || undefined)}
             className={classes.convertBtn}
           >
             Convert to Markdown

@@ -20,6 +20,12 @@
   max-width: 750px;
 }
 
+.mergeSection {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e9ecef;
+}
+
 .notesSection {
   margin-top: 16px;
   padding-top: 16px;

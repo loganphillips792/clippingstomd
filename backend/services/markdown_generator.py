@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from .epub_parser import Chapter, ParsedBook
 from .clippings_parser import Clipping
+from .markdown_parser import parse_existing_markdown
 
 
 @dataclass
@@ -123,6 +124,35 @@ def _format_location(clipping: Clipping) -> str:
     return " · ".join(parts) if parts else ""
 
 
+def _format_markdown(chapter_results: list[ChapterResult]) -> str:
+    """Format chapter results into markdown string.
+
+    Expects orphaned highlights to already be included in chapter_results
+    as a ChapterResult with title "Unmatched Highlights".
+    """
+    md_lines: list[str] = []
+
+    for cr in chapter_results:
+        heading = "#" * min(cr.level + 1, 4)
+        md_lines.append(f"{heading} {cr.title}")
+        md_lines.append("")
+        for h in cr.highlights:
+            if h["type"] == "note":
+                md_lines.append(f"- {h['text']}")
+            else:
+                md_lines.append(f'- "{h["text"]}"')
+            meta_parts = []
+            if h["location"]:
+                meta_parts.append(h["location"])
+            label = "ANNOTATION" if h["type"] == "note" else "HIGHLIGHT"
+            meta_parts.append(label)
+            if meta_parts:
+                md_lines.append(f"  {' · '.join(meta_parts)}")
+            md_lines.append("")
+
+    return "\n".join(md_lines).strip() + "\n"
+
+
 def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> GenerationResult:
     """Match clippings to chapters and generate markdown output."""
     # Match each clipping to a chapter
@@ -187,27 +217,7 @@ def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> Generation
                 })
             chapter_results.append(cr)
 
-    # Generate markdown
-    md_lines: list[str] = []
-
-    for cr in chapter_results:
-        heading = "#" * min(cr.level + 1, 4)
-        md_lines.append(f"{heading} {cr.title}")
-        md_lines.append("")
-        for h in cr.highlights:
-            if h["type"] == "note":
-                md_lines.append(f"- {h['text']}")
-            else:
-                md_lines.append(f'- "{h["text"]}"')
-            meta_parts = []
-            if h["location"]:
-                meta_parts.append(h["location"])
-            label = "ANNOTATION" if h["type"] == "note" else "HIGHLIGHT"
-            meta_parts.append(label)
-            if meta_parts:
-                md_lines.append(f"  {' · '.join(meta_parts)}")
-            md_lines.append("")
-
+    # Add orphaned clips as a chapter result
     if orphaned_clips:
         cr = ChapterResult(title="Unmatched Highlights", level=1)
         for clip in orphaned_clips:
@@ -219,28 +229,142 @@ def generate_markdown(book: ParsedBook, clippings: list[Clipping]) -> Generation
             })
         chapter_results.append(cr)
 
-        md_lines.append(f"## Unmatched Highlights")
-        md_lines.append("")
-        for clip in orphaned_clips:
-            if clip.clip_type == "note":
-                md_lines.append(f"- {clip.text}")
-            else:
-                md_lines.append(f'- "{clip.text}"')
-            meta_parts = []
-            loc = _format_location(clip)
-            if loc:
-                meta_parts.append(loc)
-            label = "ANNOTATION" if clip.clip_type == "note" else "HIGHLIGHT"
-            meta_parts.append(label)
-            md_lines.append(f"  {' · '.join(meta_parts)}")
-            md_lines.append("")
-
-    markdown = "\n".join(md_lines).strip() + "\n"
+    markdown = _format_markdown(chapter_results)
 
     return GenerationResult(
         title=book.title,
         author=book.author,
         chapters=chapter_results,
+        markdown=markdown,
+        stats=stats,
+    )
+
+
+def _is_duplicate(new_text: str, existing_normalized: set[str]) -> bool:
+    """Check if a highlight text is a duplicate of any existing highlight.
+
+    Uses exact normalized match and substring containment to catch
+    Kindle's truncation differences.
+    """
+    norm = _normalize_for_search(new_text)
+    if not norm:
+        return False
+    # Exact match
+    if norm in existing_normalized:
+        return True
+    # Substring containment (catches truncation differences)
+    for existing in existing_normalized:
+        if norm in existing or existing in norm:
+            return True
+    return False
+
+
+def merge_markdown(book: ParsedBook, clippings: list[Clipping], existing_markdown_text: str) -> GenerationResult:
+    """Merge new clippings into an existing markdown file, deduplicating highlights."""
+    # Parse existing markdown
+    parsed = parse_existing_markdown(existing_markdown_text)
+
+    # Run normal generation for the new highlights
+    new_result = generate_markdown(book, clippings)
+
+    # Build dedup index from existing highlights
+    existing_normalized: set[str] = set()
+    existing_highlight_count = 0
+    for chapter in parsed.chapters:
+        for h in chapter.highlights:
+            existing_highlight_count += 1
+            norm = _normalize_for_search(h.text)
+            if norm:
+                existing_normalized.add(norm)
+
+    # Build lookup of existing chapters by title
+    existing_chapters: dict[str, list[dict]] = {}
+    existing_chapter_levels: dict[str, int] = {}
+    for chapter in parsed.chapters:
+        existing_chapters[chapter.title] = [
+            {
+                "text": h.text,
+                "type": h.clip_type,
+                "location": h.location,
+                "page": h.page,
+            }
+            for h in chapter.highlights
+        ]
+        existing_chapter_levels[chapter.title] = chapter.level
+
+    # Track merge stats
+    duplicates_skipped = 0
+    new_highlights_added = 0
+
+    # Merge chapters
+    merged_results: list[ChapterResult] = []
+    seen_titles: set[str] = set()
+
+    # First, preserve existing chapters in their original order, appending new non-duplicate highlights
+    for chapter in parsed.chapters:
+        seen_titles.add(chapter.title)
+        cr = ChapterResult(title=chapter.title, level=chapter.level)
+        # Keep all existing highlights
+        cr.highlights = list(existing_chapters[chapter.title])
+
+        # Find matching chapter in new results and append non-duplicates
+        for new_cr in new_result.chapters:
+            if new_cr.title == chapter.title:
+                for h in new_cr.highlights:
+                    if _is_duplicate(h["text"], existing_normalized):
+                        duplicates_skipped += 1
+                    else:
+                        cr.highlights.append(h)
+                        new_highlights_added += 1
+                        # Add to dedup index so later chapters don't re-add
+                        norm = _normalize_for_search(h["text"])
+                        if norm:
+                            existing_normalized.add(norm)
+                break
+
+        merged_results.append(cr)
+
+    # Then add chapters that only exist in new results
+    for new_cr in new_result.chapters:
+        if new_cr.title not in seen_titles:
+            seen_titles.add(new_cr.title)
+            cr = ChapterResult(title=new_cr.title, level=new_cr.level)
+            for h in new_cr.highlights:
+                if _is_duplicate(h["text"], existing_normalized):
+                    duplicates_skipped += 1
+                else:
+                    cr.highlights.append(h)
+                    new_highlights_added += 1
+                    norm = _normalize_for_search(h["text"])
+                    if norm:
+                        existing_normalized.add(norm)
+            if cr.highlights:
+                merged_results.append(cr)
+
+    markdown = _format_markdown(merged_results)
+
+    total_in_output = sum(len(cr.highlights) for cr in merged_results)
+    matched_in_output = sum(
+        len(cr.highlights) for cr in merged_results if cr.title != "Unmatched Highlights"
+    )
+    orphaned_in_output = total_in_output - matched_in_output
+    match_rate = round((matched_in_output / total_in_output * 100), 1) if total_in_output > 0 else 0
+
+    stats = {
+        "total_highlights": total_in_output,
+        "matched": matched_in_output,
+        "orphaned": orphaned_in_output,
+        "match_rate": match_rate,
+        "is_merge": True,
+        "existing_highlights": existing_highlight_count,
+        "new_highlights_added": new_highlights_added,
+        "duplicates_skipped": duplicates_skipped,
+    }
+
+    return GenerationResult(
+        title=book.title,
+        author=book.author,
+        chapters=merged_results,
         markdown=markdown,
         stats=stats,
     )

@@ -14,11 +14,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleConvert = async (epub: File, clippings: File | null, notes?: string) => {
+  const handleConvert = async (epub: File, clippings: File | null, notes?: string, existingMarkdown?: File, existingMarkdownText?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await convertFiles(epub, clippings, notes);
+      const data = await convertFiles(epub, clippings, notes, existingMarkdown, existingMarkdownText);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Conversion failed');

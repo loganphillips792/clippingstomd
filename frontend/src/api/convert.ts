@@ -6,6 +6,8 @@ export async function convertFiles(
   epub: File,
   clippings: File | null,
   notes?: string,
+  existingMarkdown?: File,
+  existingMarkdownText?: string,
   onProgress?: (pct: number) => void
 ): Promise<ConversionResult> {
   const formData = new FormData();
@@ -15,6 +17,12 @@ export async function convertFiles(
   }
   if (notes?.trim()) {
     formData.append('notes', notes);
+  }
+  if (existingMarkdown) {
+    formData.append('existing_markdown', existingMarkdown);
+  }
+  if (existingMarkdownText?.trim()) {
+    formData.append('existing_markdown_text', existingMarkdownText);
   }
 
   onProgress?.(10);

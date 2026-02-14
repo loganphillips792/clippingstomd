@@ -78,6 +78,16 @@ export function ResultsPage({ result, onBack }: ResultsPageProps) {
             <Badge size="sm" variant="light" color="blue">
               {result.stats.matched_highlights} Matched
             </Badge>
+            {result.stats.is_merge && (
+              <>
+                <Badge size="sm" variant="light" color="teal">
+                  {result.stats.new_highlights_added} New Added
+                </Badge>
+                <Badge size="sm" variant="light" color="gray">
+                  {result.stats.duplicates_skipped} Duplicates Skipped
+                </Badge>
+              </>
+            )}
           </Group>
         </Group>
       </div>
@@ -105,6 +115,9 @@ export function ResultsPage({ result, onBack }: ResultsPageProps) {
         fileSize={result.stats.file_size}
         matchRate={result.stats.match_rate}
         orphanCount={result.stats.orphaned_highlights}
+        isMerge={result.stats.is_merge}
+        newAdded={result.stats.new_highlights_added}
+        duplicatesSkipped={result.stats.duplicates_skipped}
       />
     </div>
   );

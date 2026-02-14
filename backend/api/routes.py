@@ -5,7 +5,7 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from services.epub_parser import parse_epub
 from services.clippings_parser import parse_clippings, Clipping
-from services.markdown_generator import generate_markdown
+from services.markdown_generator import generate_markdown, merge_markdown
 
 router = APIRouter(prefix="/api")
 
@@ -37,6 +37,8 @@ async def convert(
     epub: UploadFile = File(...),
     clippings: Optional[UploadFile] = File(None),
     notes: Optional[str] = Form(None),
+    existing_markdown: Optional[UploadFile] = File(None),
+    existing_markdown_text: Optional[str] = Form(None),
 ):
     """Convert an epub + Kindle clippings + pasted notes into structured markdown."""
     # Validate epub
@@ -72,7 +74,23 @@ async def convert(
             detail="No highlights or notes provided. Upload a clippings file or paste some notes.",
         )
 
-    result = generate_markdown(book, all_clippings)
+    # Parse existing markdown if provided (merge mode) — file takes precedence over pasted text
+    existing_md_text: Optional[str] = None
+    if existing_markdown and existing_markdown.filename:
+        if not existing_markdown.filename.lower().endswith(".md"):
+            raise HTTPException(status_code=400, detail="Existing markdown file must be a .md file")
+        try:
+            md_bytes = await existing_markdown.read()
+            existing_md_text = md_bytes.decode("utf-8", errors="replace")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to read existing markdown file: {e}")
+    elif existing_markdown_text and existing_markdown_text.strip():
+        existing_md_text = existing_markdown_text
+
+    if existing_md_text:
+        result = merge_markdown(book, all_clippings, existing_md_text)
+    else:
+        result = generate_markdown(book, all_clippings)
 
     return {
         "title": result.title,

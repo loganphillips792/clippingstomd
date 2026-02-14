@@ -21,5 +21,9 @@ export interface ConversionResult {
     orphaned_highlights: number;
     match_rate: number;
     file_size: string;
+    is_merge?: boolean;
+    existing_highlights?: number;
+    new_highlights_added?: number;
+    duplicates_skipped?: number;
   };
 }

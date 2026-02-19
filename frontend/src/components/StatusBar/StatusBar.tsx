@@ -7,10 +7,10 @@ interface StatusBarProps {
   orphanCount: number;
   isMerge?: boolean;
   newAdded?: number;
-  duplicatesSkipped?: number;
+  duplicatesFound?: number;
 }
 
-export function StatusBar({ fileSize, matchRate, orphanCount, isMerge, newAdded, duplicatesSkipped }: StatusBarProps) {
+export function StatusBar({ fileSize, matchRate, orphanCount, isMerge, newAdded, duplicatesFound }: StatusBarProps) {
   return (
     <div className={classes.bar}>
       <Group justify="center" gap="xl">
@@ -62,10 +62,10 @@ export function StatusBar({ fileSize, matchRate, orphanCount, isMerge, newAdded,
 
             <Group gap={6}>
               <Text size="xs" c="dimmed" fw={600} tt="uppercase">
-                Duplicates Skipped
+                Duplicates Found
               </Text>
-              <Text size="xs" fw={700} c="gray">
-                {duplicatesSkipped}
+              <Text size="xs" fw={700} c="orange">
+                {duplicatesFound}
               </Text>
             </Group>
           </>

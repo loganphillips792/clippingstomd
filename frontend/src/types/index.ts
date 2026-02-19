@@ -15,6 +15,7 @@ export interface ConversionResult {
   author: string;
   chapters: Chapter[];
   markdown: string;
+  original_markdown?: string | null;
   stats: {
     total_highlights: number;
     matched_highlights: number;
@@ -24,6 +25,6 @@ export interface ConversionResult {
     is_merge?: boolean;
     existing_highlights?: number;
     new_highlights_added?: number;
-    duplicates_skipped?: number;
+    duplicates_found?: number;
   };
 }

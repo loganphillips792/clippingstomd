@@ -4,6 +4,12 @@ Convert your Kindle highlights into structured Markdown organized by book chapte
 
 Upload an EPUB file and your Kindle `My Clippings.txt` to generate a clean Markdown file with highlights matched to the correct chapters and sections.
 
+## Use Cases
+
+- **Clippings + EPUB** — Upload your Kindle `My Clippings.txt` alongside the EPUB to get all your highlights organized by chapter.
+- **Clippings + EPUB + your own notes** — Same as above, plus paste in your own notes (bullet points, thoughts, etc.). Each line gets matched to the closest chapter in the EPUB and woven in with your highlights.
+- **Clippings + EPUB + existing Markdown** — Already have a markdown file from a previous export? Toggle merge mode and upload it (or paste it in). New highlights get merged into the existing structure without duplicates.
+
 ## Quick Start (Docker)
 
 ```bash

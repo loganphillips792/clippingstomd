@@ -26,10 +26,37 @@
   min-width: 240px;
   max-width: 350px;
   overflow: hidden;
+  transition: width 0.2s, min-width 0.2s, max-width 0.2s;
+}
+
+.tocCollapsed {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  border-right: 1px solid #e9ecef;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.tocExpandBtn {
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.tocExpandBtn:hover {
+  opacity: 1;
 }
 
 .previewPanel {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+}
+
+.diffPanel {
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }

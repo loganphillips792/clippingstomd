@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Container, Title, Text, Button, Group, Card, Stack, Textarea, Collapse, UnstyledButton, Switch } from '@mantine/core';
 import { type FileWithPath } from '@mantine/dropzone';
-import { IconBolt, IconLock, IconNotes, IconChevronDown, IconChevronRight, IconGitMerge } from '@tabler/icons-react';
+import { IconBolt, IconLock, IconGitMerge, IconChevronDown, IconChevronRight, IconNotes } from '@tabler/icons-react';
 import { FileDropzone } from '../FileDropzone/FileDropzone';
 import { HowItWorks } from '../HowItWorks/HowItWorks';
 import { FeatureCards } from '../FeatureCards/FeatureCards';
@@ -91,6 +91,48 @@ export function UploadPage({ onConvert, loading }: UploadPageProps) {
               />
             </Group>
 
+            {/* Paste Notes Section */}
+            <div className={classes.notesSection}>
+              <UnstyledButton
+                onClick={() => setNotesOpen((o) => !o)}
+                className={classes.notesToggle}
+              >
+                <Group gap={6}>
+                  {notesOpen ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
+                  <Text size="sm" c="dimmed" fw={500}>
+                    Step 3
+                  </Text>
+                  <IconNotes size={16} />
+                  <Text size="sm" fw={500}>
+                    Paste additional notes
+                  </Text>
+                  {notes.trim() && !notesOpen && (
+                    <Text size="xs" c="blue" fw={500}>
+                      ({notes.trim().split('\n').filter(Boolean).length} lines)
+                    </Text>
+                  )}
+                </Group>
+              </UnstyledButton>
+              <Collapse in={notesOpen}>
+                <Stack gap="xs" mt="sm">
+                  <Textarea
+                    placeholder={"Paste your bullet points here, one per line:\n- First note or highlight\n- Second note or highlight"}
+                    minRows={5}
+                    maxRows={12}
+                    autosize
+                    value={notes}
+                    onChange={(e) => setNotes(e.currentTarget.value)}
+                    styles={{
+                      input: { fontFamily: 'monospace', fontSize: 13 },
+                    }}
+                  />
+                  <Text size="xs" c="dimmed">
+                    Each line will be matched to the closest chapter in the EPUB.
+                  </Text>
+                </Stack>
+              </Collapse>
+            </div>
+
             {/* Merge Mode Section */}
             <div className={classes.mergeSection}>
               <Group gap="sm">
@@ -105,7 +147,7 @@ export function UploadPage({ onConvert, loading }: UploadPageProps) {
               <Collapse in={mergeMode}>
                 <Stack gap="sm" mt={12}>
                   <FileDropzone
-                    step={3}
+                    step={4}
                     title="Upload Existing Markdown"
                     description="Drop your previously exported .md file"
                     helper="New highlights will be merged in"
@@ -134,44 +176,6 @@ export function UploadPage({ onConvert, loading }: UploadPageProps) {
                     </Text>
                   )}
                 </Stack>
-              </Collapse>
-            </div>
-
-            {/* Paste Notes Section */}
-            <div className={classes.notesSection}>
-              <UnstyledButton
-                onClick={() => setNotesOpen((o) => !o)}
-                className={classes.notesToggle}
-              >
-                <Group gap={6}>
-                  {notesOpen ? <IconChevronDown size={16} /> : <IconChevronRight size={16} />}
-                  <IconNotes size={16} />
-                  <Text size="sm" fw={500}>
-                    Paste additional notes
-                  </Text>
-                  {notes.trim() && !notesOpen && (
-                    <Text size="xs" c="blue" fw={500}>
-                      ({notes.trim().split('\n').filter(Boolean).length} lines)
-                    </Text>
-                  )}
-                </Group>
-              </UnstyledButton>
-              <Collapse in={notesOpen}>
-                <Textarea
-                  mt="xs"
-                  placeholder={"Paste your bullet points here, one per line:\n- First note or highlight\n- Second note or highlight"}
-                  minRows={5}
-                  maxRows={12}
-                  autosize
-                  value={notes}
-                  onChange={(e) => setNotes(e.currentTarget.value)}
-                  styles={{
-                    input: { fontFamily: 'monospace', fontSize: 13 },
-                  }}
-                />
-                <Text size="xs" c="dimmed" mt={4}>
-                  Each line will be matched to the closest chapter in the EPUB.
-                </Text>
               </Collapse>
             </div>
           </Card>

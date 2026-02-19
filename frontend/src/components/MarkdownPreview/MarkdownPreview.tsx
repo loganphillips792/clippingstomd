@@ -2,7 +2,17 @@ import { ScrollArea, Group, Text, Select, ActionIcon, Tooltip } from '@mantine/c
 import ReactMarkdown from 'react-markdown';
 import { useState, useEffect, useRef } from 'react';
 import type { Components } from 'react-markdown';
+import type { ReactNode } from 'react';
 import { IconEdit, IconEye } from '@tabler/icons-react';
+
+function extractText(node: ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (!node) return '';
+  if (Array.isArray(node)) return node.map(extractText).join('');
+  if (typeof node === 'object' && 'props' in node) return extractText((node as { props: { children?: ReactNode } }).props.children);
+  return '';
+}
 import classes from './MarkdownPreview.module.css';
 
 interface MarkdownPreviewProps {
@@ -37,6 +47,13 @@ export function MarkdownPreview({ markdown, activeChapterTitle, onEdit }: Markdo
     h3: ({ children, ...props }) => {
       const text = String(children);
       return <h3 id={`heading-${slugify(text)}`} {...props}>{children}</h3>;
+    },
+    li: ({ children, ...props }) => {
+      const text = extractText(children);
+      if (text.includes('DUPLICATE')) {
+        return <li className={classes.duplicateHighlight} {...props}>{children}</li>;
+      }
+      return <li {...props}>{children}</li>;
     },
   };
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from .epub_parser import Chapter, ParsedBook
 from .clippings_parser import Clipping
-from .markdown_parser import parse_existing_markdown
+from .markdown_parser import ParsedHighlight, RawBlock, parse_existing_markdown
 
 
 @dataclass
@@ -21,6 +21,7 @@ class ChapterResult:
     title: str
     level: int
     highlights: list[dict] = field(default_factory=list)
+    content_items: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -30,6 +31,7 @@ class GenerationResult:
     chapters: list[ChapterResult]
     markdown: str
     stats: dict
+    preamble: list[str] = field(default_factory=list)
 
 
 def _normalize_for_search(text: str) -> str:
@@ -124,31 +126,53 @@ def _format_location(clipping: Clipping) -> str:
     return " · ".join(parts) if parts else ""
 
 
-def _format_markdown(chapter_results: list[ChapterResult]) -> str:
+def _render_highlight(h: dict, md_lines: list[str]) -> None:
+    """Render a single highlight dict into markdown lines."""
+    if h["type"] == "note":
+        md_lines.append(f"- {h['text']}")
+    else:
+        md_lines.append(f'- "{h["text"]}"')
+    if h.get("duplicate"):
+        md_lines.append("  DUPLICATE")
+    md_lines.append("")
+
+
+def _format_markdown(
+    chapter_results: list[ChapterResult],
+    preamble: list[str] | None = None,
+) -> str:
     """Format chapter results into markdown string.
 
     Expects orphaned highlights to already be included in chapter_results
     as a ChapterResult with title "Unmatched Highlights".
+
+    If content_items is populated on a chapter (merge path), it is used for
+    ordered rendering (preserving interleaved raw blocks). Otherwise falls
+    through to the highlights-only path (fresh generation).
     """
     md_lines: list[str] = []
+
+    if preamble:
+        md_lines.extend(preamble)
+        md_lines.append("")
 
     for cr in chapter_results:
         heading = "#" * min(cr.level + 1, 4)
         md_lines.append(f"{heading} {cr.title}")
         md_lines.append("")
-        for h in cr.highlights:
-            if h["type"] == "note":
-                md_lines.append(f"- {h['text']}")
-            else:
-                md_lines.append(f'- "{h["text"]}"')
-            meta_parts = []
-            if h["location"]:
-                meta_parts.append(h["location"])
-            label = "ANNOTATION" if h["type"] == "note" else "HIGHLIGHT"
-            meta_parts.append(label)
-            if meta_parts:
-                md_lines.append(f"  {' · '.join(meta_parts)}")
-            md_lines.append("")
+
+        if cr.content_items:
+            # Merge path: render content_items preserving interleaved raw blocks
+            for item in cr.content_items:
+                if "raw_lines" in item:
+                    md_lines.extend(item["raw_lines"])
+                    md_lines.append("")
+                else:
+                    _render_highlight(item, md_lines)
+        else:
+            # Fresh generation path: render highlights only
+            for h in cr.highlights:
+                _render_highlight(h, md_lines)
 
     return "\n".join(md_lines).strip() + "\n"
 
@@ -277,23 +301,8 @@ def merge_markdown(book: ParsedBook, clippings: list[Clipping], existing_markdow
             if norm:
                 existing_normalized.add(norm)
 
-    # Build lookup of existing chapters by title
-    existing_chapters: dict[str, list[dict]] = {}
-    existing_chapter_levels: dict[str, int] = {}
-    for chapter in parsed.chapters:
-        existing_chapters[chapter.title] = [
-            {
-                "text": h.text,
-                "type": h.clip_type,
-                "location": h.location,
-                "page": h.page,
-            }
-            for h in chapter.highlights
-        ]
-        existing_chapter_levels[chapter.title] = chapter.level
-
     # Track merge stats
-    duplicates_skipped = 0
+    duplicates_found = 0
     new_highlights_added = 0
 
     # Merge chapters
@@ -304,17 +313,36 @@ def merge_markdown(book: ParsedBook, clippings: list[Clipping], existing_markdow
     for chapter in parsed.chapters:
         seen_titles.add(chapter.title)
         cr = ChapterResult(title=chapter.title, level=chapter.level)
-        # Keep all existing highlights
-        cr.highlights = list(existing_chapters[chapter.title])
+
+        # Build content_items from parsed content_items (preserves interleaved raw blocks)
+        for item in chapter.content_items:
+            if isinstance(item, RawBlock):
+                cr.content_items.append({"raw_lines": item.lines})
+            elif isinstance(item, ParsedHighlight):
+                h_dict = {
+                    "text": item.text,
+                    "type": item.clip_type,
+                    "location": item.location,
+                    "page": item.page,
+                }
+                cr.highlights.append(h_dict)
+                cr.content_items.append(h_dict)
 
         # Find matching chapter in new results and append non-duplicates
         for new_cr in new_result.chapters:
             if new_cr.title == chapter.title:
                 for h in new_cr.highlights:
                     if _is_duplicate(h["text"], existing_normalized):
-                        duplicates_skipped += 1
+                        duplicates_found += 1
+                        dup_h = {**h, "duplicate": True}
+                        cr.highlights.append(dup_h)
+                        cr.content_items.append(dup_h)
+                        norm = _normalize_for_search(dup_h["text"])
+                        if norm:
+                            existing_normalized.add(norm)
                     else:
                         cr.highlights.append(h)
+                        cr.content_items.append(h)
                         new_highlights_added += 1
                         # Add to dedup index so later chapters don't re-add
                         norm = _normalize_for_search(h["text"])
@@ -331,7 +359,12 @@ def merge_markdown(book: ParsedBook, clippings: list[Clipping], existing_markdow
             cr = ChapterResult(title=new_cr.title, level=new_cr.level)
             for h in new_cr.highlights:
                 if _is_duplicate(h["text"], existing_normalized):
-                    duplicates_skipped += 1
+                    duplicates_found += 1
+                    dup_h = {**h, "duplicate": True}
+                    cr.highlights.append(dup_h)
+                    norm = _normalize_for_search(dup_h["text"])
+                    if norm:
+                        existing_normalized.add(norm)
                 else:
                     cr.highlights.append(h)
                     new_highlights_added += 1
@@ -339,9 +372,11 @@ def merge_markdown(book: ParsedBook, clippings: list[Clipping], existing_markdow
                     if norm:
                         existing_normalized.add(norm)
             if cr.highlights:
+                # New-only chapters: content_items mirrors highlights (no raw blocks)
+                cr.content_items = list(cr.highlights)
                 merged_results.append(cr)
 
-    markdown = _format_markdown(merged_results)
+    markdown = _format_markdown(merged_results, preamble=parsed.preamble)
 
     total_in_output = sum(len(cr.highlights) for cr in merged_results)
     matched_in_output = sum(
@@ -358,7 +393,7 @@ def merge_markdown(book: ParsedBook, clippings: list[Clipping], existing_markdow
         "is_merge": True,
         "existing_highlights": existing_highlight_count,
         "new_highlights_added": new_highlights_added,
-        "duplicates_skipped": duplicates_skipped,
+        "duplicates_found": duplicates_found,
     }
 
     return GenerationResult(
@@ -367,4 +402,5 @@ def merge_markdown(book: ParsedBook, clippings: list[Clipping], existing_markdow
         chapters=merged_results,
         markdown=markdown,
         stats=stats,
+        preamble=parsed.preamble,
     )

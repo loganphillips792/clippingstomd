@@ -5,6 +5,12 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class RawBlock:
+    """A block of unrecognized lines to preserve verbatim (user-added content)."""
+    lines: list[str] = field(default_factory=list)
+
+
+@dataclass
 class ParsedHighlight:
     text: str
     clip_type: str  # "highlight" or "note"
@@ -17,11 +23,29 @@ class ParsedChapter:
     title: str
     level: int
     highlights: list[ParsedHighlight] = field(default_factory=list)
+    content_items: list[ParsedHighlight | RawBlock] = field(default_factory=list)
 
 
 @dataclass
 class ParsedMarkdown:
     chapters: list[ParsedChapter] = field(default_factory=list)
+    preamble: list[str] = field(default_factory=list)
+
+
+def _flush_raw_accumulator(raw_accumulator: list[str]) -> RawBlock | None:
+    """Flush the raw accumulator into a RawBlock, stripping leading/trailing blank lines.
+
+    Returns None if only blank lines remain (structural whitespace).
+    """
+    # Strip leading blank lines
+    while raw_accumulator and raw_accumulator[0].strip() == "":
+        raw_accumulator.pop(0)
+    # Strip trailing blank lines
+    while raw_accumulator and raw_accumulator[-1].strip() == "":
+        raw_accumulator.pop()
+    if not raw_accumulator:
+        return None
+    return RawBlock(lines=list(raw_accumulator))
 
 
 def parse_existing_markdown(markdown_text: str) -> ParsedMarkdown:
@@ -33,19 +57,33 @@ def parse_existing_markdown(markdown_text: str) -> ParsedMarkdown:
           PAGE 42 · LOCATION 100-105 · HIGHLIGHT
         - note text
           ANNOTATION
+
+    Unrecognized lines are preserved as RawBlock entries in content_items.
     """
     result = ParsedMarkdown()
     current_chapter: ParsedChapter | None = None
     current_highlight: ParsedHighlight | None = None
+    raw_accumulator: list[str] = []
 
     for line in markdown_text.splitlines():
-        # Chapter heading: ## Title, ### Title, #### Title
-        heading_match = re.match(r"^(#{2,4})\s+(.+)$", line)
+        # Chapter heading: # Title, ## Title, ### Title, #### Title
+        heading_match = re.match(r"^(#{1,4})\s+(.+)$", line)
         if heading_match:
             # Flush any pending highlight
             if current_highlight and current_chapter:
                 current_chapter.highlights.append(current_highlight)
+                current_chapter.content_items.append(current_highlight)
                 current_highlight = None
+
+            # Flush raw accumulator to current chapter or preamble
+            if raw_accumulator:
+                block = _flush_raw_accumulator(raw_accumulator)
+                if block:
+                    if current_chapter:
+                        current_chapter.content_items.append(block)
+                    else:
+                        result.preamble.extend(block.lines)
+                raw_accumulator.clear()
 
             level = len(heading_match.group(1)) - 1  # ## = level 1, ### = level 2, etc.
             title = heading_match.group(2).strip()
@@ -58,6 +96,15 @@ def parse_existing_markdown(markdown_text: str) -> ParsedMarkdown:
         if highlight_match and current_chapter is not None:
             if current_highlight:
                 current_chapter.highlights.append(current_highlight)
+                current_chapter.content_items.append(current_highlight)
+
+            # Flush raw accumulator before this highlight
+            if raw_accumulator:
+                block = _flush_raw_accumulator(raw_accumulator)
+                if block:
+                    current_chapter.content_items.append(block)
+                raw_accumulator.clear()
+
             current_highlight = ParsedHighlight(
                 text=highlight_match.group(1),
                 clip_type="highlight",
@@ -71,6 +118,15 @@ def parse_existing_markdown(markdown_text: str) -> ParsedMarkdown:
         if note_match and current_chapter is not None:
             if current_highlight:
                 current_chapter.highlights.append(current_highlight)
+                current_chapter.content_items.append(current_highlight)
+
+            # Flush raw accumulator before this note
+            if raw_accumulator:
+                block = _flush_raw_accumulator(raw_accumulator)
+                if block:
+                    current_chapter.content_items.append(block)
+                raw_accumulator.clear()
+
             current_highlight = ParsedHighlight(
                 text=note_match.group(1),
                 clip_type="note",
@@ -92,8 +148,21 @@ def parse_existing_markdown(markdown_text: str) -> ParsedMarkdown:
                 current_highlight.location = loc_match.group(1)
             continue
 
+        # Unrecognized line — accumulate for raw block
+        raw_accumulator.append(line)
+
     # Flush last highlight
     if current_highlight and current_chapter:
         current_chapter.highlights.append(current_highlight)
+        current_chapter.content_items.append(current_highlight)
+
+    # Flush any remaining raw accumulator
+    if raw_accumulator:
+        block = _flush_raw_accumulator(raw_accumulator)
+        if block:
+            if current_chapter:
+                current_chapter.content_items.append(block)
+            else:
+                result.preamble.extend(block.lines)
 
     return result

@@ -81,7 +81,7 @@ async def convert(
             raise HTTPException(status_code=400, detail="Existing markdown file must be a .md file")
         try:
             md_bytes = await existing_markdown.read()
-            existing_md_text = md_bytes.decode("utf-8", errors="replace")
+            existing_md_text = md_bytes.decode("utf-8-sig", errors="replace")
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to read existing markdown file: {e}")
     elif existing_markdown_text and existing_markdown_text.strip():
@@ -104,5 +104,6 @@ async def convert(
             for ch in result.chapters
         ],
         "markdown": result.markdown,
+        "original_markdown": existing_md_text,
         "stats": result.stats,
     }

@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Group, Text, Badge, Progress } from '@mantine/core';
-import { IconCheck } from '@tabler/icons-react';
+import { ActionIcon, Group, Text, Badge, Progress, Tooltip } from '@mantine/core';
+import { IconCheck, IconGitCompare, IconLayoutSidebarLeftExpand } from '@tabler/icons-react';
 import type { ConversionResult } from '../../types';
 import { Header } from '../Header/Header';
 import { TableOfContents } from '../TableOfContents/TableOfContents';
 import { MarkdownPreview } from '../MarkdownPreview/MarkdownPreview';
+import { DiffView } from '../DiffView/DiffView';
 import { StatusBar } from '../StatusBar/StatusBar';
 import classes from './ResultsPage.module.css';
 
@@ -16,6 +17,10 @@ interface ResultsPageProps {
 export function ResultsPage({ result, onBack }: ResultsPageProps) {
   const [activeChapter, setActiveChapter] = useState(0);
   const [markdown, setMarkdown] = useState(result.markdown);
+  const [showDiff, setShowDiff] = useState(false);
+  const [tocCollapsed, setTocCollapsed] = useState(false);
+
+  const canShowDiff = result.stats.is_merge && !!result.original_markdown;
 
   const handleDownload = () => {
     const blob = new Blob([markdown], { type: 'text/markdown' });
@@ -83,32 +88,69 @@ export function ResultsPage({ result, onBack }: ResultsPageProps) {
                 <Badge size="sm" variant="light" color="teal">
                   {result.stats.new_highlights_added} New Added
                 </Badge>
-                <Badge size="sm" variant="light" color="gray">
-                  {result.stats.duplicates_skipped} Duplicates Skipped
+                <Badge size="sm" variant="light" color="orange">
+                  {result.stats.duplicates_found} Duplicates Found
                 </Badge>
               </>
+            )}
+            {canShowDiff && (
+              <Tooltip label={showDiff ? 'Hide Diff' : 'View Diff'}>
+                <ActionIcon
+                  variant={showDiff ? 'filled' : 'light'}
+                  color="violet"
+                  size="sm"
+                  onClick={() => setShowDiff(!showDiff)}
+                >
+                  <IconGitCompare size={14} />
+                </ActionIcon>
+              </Tooltip>
             )}
           </Group>
         </Group>
       </div>
 
       {/* Main panels */}
-      <div className={classes.panels}>
-        <div className={classes.tocPanel}>
-          <TableOfContents
-            chapters={result.chapters}
-            activeIndex={activeChapter}
-            onSelect={setActiveChapter}
+      {showDiff && canShowDiff ? (
+        <div className={classes.diffPanel}>
+          <DiffView
+            originalMarkdown={result.original_markdown!}
+            mergedMarkdown={markdown}
+            onBack={() => setShowDiff(false)}
           />
         </div>
-        <div className={classes.previewPanel}>
-          <MarkdownPreview
-            markdown={markdown}
-            activeChapterTitle={result.chapters[activeChapter]?.title}
-            onEdit={setMarkdown}
-          />
+      ) : (
+        <div className={classes.panels}>
+          <div className={`${classes.tocPanel} ${tocCollapsed ? classes.tocCollapsed : ''}`}>
+            {tocCollapsed ? (
+              <Tooltip label="Show Table of Contents" position="right">
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  size="md"
+                  onClick={() => setTocCollapsed(false)}
+                  className={classes.tocExpandBtn}
+                >
+                  <IconLayoutSidebarLeftExpand size={18} />
+                </ActionIcon>
+              </Tooltip>
+            ) : (
+              <TableOfContents
+                chapters={result.chapters}
+                activeIndex={activeChapter}
+                onSelect={setActiveChapter}
+                onCollapse={() => setTocCollapsed(true)}
+              />
+            )}
+          </div>
+          <div className={classes.previewPanel}>
+            <MarkdownPreview
+              markdown={markdown}
+              activeChapterTitle={result.chapters[activeChapter]?.title}
+              onEdit={setMarkdown}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Status bar */}
       <StatusBar
@@ -117,7 +159,7 @@ export function ResultsPage({ result, onBack }: ResultsPageProps) {
         orphanCount={result.stats.orphaned_highlights}
         isMerge={result.stats.is_merge}
         newAdded={result.stats.new_highlights_added}
-        duplicatesSkipped={result.stats.duplicates_skipped}
+        duplicatesFound={result.stats.duplicates_found}
       />
     </div>
   );

@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { useState, useEffect, useRef, useMemo } from 'react';
 import type { Components } from 'react-markdown';
 import type { ReactNode } from 'react';
-import { IconEdit, IconEye, IconTrash, IconX } from '@tabler/icons-react';
+import { IconEdit, IconEye, IconPencil, IconTrash, IconX } from '@tabler/icons-react';
 
 function extractText(node: ReactNode): string {
   if (typeof node === 'string') return node;
@@ -152,6 +152,26 @@ export function MarkdownPreview({ markdown, activeChapterTitle, onEdit }: Markdo
   const [editing, setEditing] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollToLineRef = useRef<number | null>(null);
+
+  // Precompute character offsets for every bullet line: raw text after "- " → char offset
+  const bulletOffsetMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let pos = 0;
+    for (const line of markdown.split('\n')) {
+      if (line.startsWith('- ')) {
+        const key = line.slice(2).trim();
+        if (!map.has(key)) map.set(key, pos);
+      }
+      pos += line.length + 1;
+    }
+    return map;
+  }, [markdown]);
+
+  const handleEditAtLine = (itemText: string) => {
+    scrollToLineRef.current = bulletOffsetMap.get(itemText.trim()) ?? null;
+    setEditing(true);
+  };
 
   const dupCount = useMemo(() => countDuplicates(markdown), [markdown]);
 
@@ -165,6 +185,20 @@ export function MarkdownPreview({ markdown, activeChapterTitle, onEdit }: Markdo
     }
     return byOrig;
   }, [markdown]);
+
+  const editBtn = (itemText: string) => (
+    <Tooltip label="Edit line" position="left">
+      <ActionIcon
+        className={classes.editBtn}
+        variant="subtle"
+        color="gray"
+        size="xs"
+        onClick={() => handleEditAtLine(itemText)}
+      >
+        <IconPencil size={12} />
+      </ActionIcon>
+    </Tooltip>
+  );
 
   const components: Components = {
     h1: ({ children, ...props }) => {
@@ -186,11 +220,11 @@ export function MarkdownPreview({ markdown, activeChapterTitle, onEdit }: Markdo
       // Case 1: DUPLICATE-marked item
       if (text.includes('DUPLICATE')) {
         const filteredChildren = filterDuplicateText(children);
-        // Get the actual item text (without DUPLICATE marker) for removal
         const cleanText = text.replace(/\s*DUPLICATE\s*/, '').trim();
         return (
           <li className={classes.duplicateHighlight} {...props}>
             <span className={classes.duplicateContent}>{filteredChildren}</span>
+            {editBtn(cleanText)}
             <Tooltip label="Remove duplicate" position="left">
               <ActionIcon
                 className={classes.removeBtn}
@@ -212,6 +246,7 @@ export function MarkdownPreview({ markdown, activeChapterTitle, onEdit }: Markdo
         return (
           <li className={classes.duplicateHighlight} {...props}>
             <span className={classes.duplicateContent}>{children}</span>
+            {editBtn(group.originalText)}
             <Tooltip label="Remove original" position="left">
               <ActionIcon
                 className={classes.removeBtn}
@@ -228,7 +263,12 @@ export function MarkdownPreview({ markdown, activeChapterTitle, onEdit }: Markdo
       }
 
       // Case 3: Normal item
-      return <li {...props}>{children}</li>;
+      return (
+        <li className={classes.editableLi} {...props}>
+          <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
+          {editBtn(text)}
+        </li>
+      );
     },
   };
 
@@ -243,9 +283,21 @@ export function MarkdownPreview({ markdown, activeChapterTitle, onEdit }: Markdo
   }, [activeChapterTitle, editing]);
 
   useEffect(() => {
-    if (editing && textareaRef.current) {
-      textareaRef.current.focus();
-    }
+    if (!editing || !textareaRef.current) return;
+    const textarea = textareaRef.current;
+    // Use setTimeout to ensure the textarea is fully laid out and has dimensions
+    const timer = setTimeout(() => {
+      const offset = scrollToLineRef.current;
+      scrollToLineRef.current = null;
+      textarea.focus();
+      if (offset !== null && offset > 0) {
+        textarea.setSelectionRange(offset, offset);
+        // Scroll proportionally: cursor position in text → same ratio in scroll
+        const ratio = offset / textarea.value.length;
+        textarea.scrollTop = ratio * textarea.scrollHeight - textarea.clientHeight / 3;
+      }
+    }, 50);
+    return () => clearTimeout(timer);
   }, [editing]);
 
   return (

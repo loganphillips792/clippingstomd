@@ -128,10 +128,7 @@ def _format_location(clipping: Clipping) -> str:
 
 def _render_highlight(h: dict, md_lines: list[str]) -> None:
     """Render a single highlight dict into markdown lines."""
-    if h["type"] == "note":
-        md_lines.append(f"- {h['text']}")
-    else:
-        md_lines.append(f'- "{h["text"]}"')
+    md_lines.append(f"- {h['text']}")
     if h.get("duplicate"):
         md_lines.append("  DUPLICATE")
     md_lines.append("")

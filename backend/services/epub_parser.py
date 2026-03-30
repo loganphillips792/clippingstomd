@@ -3,6 +3,7 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 from dataclasses import dataclass, field
 from io import BytesIO
+from urllib.parse import unquote
 
 
 @dataclass
@@ -33,8 +34,8 @@ def _extract_text(html_content: bytes | str) -> str:
 
 def _get_item_text(book: epub.EpubBook, href: str) -> str:
     """Get text content for an item by href."""
-    # Strip any fragment identifier
-    base_href = href.split("#")[0]
+    # Strip any fragment identifier and decode URL-encoded characters
+    base_href = unquote(href.split("#")[0])
     for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
         item_href = item.get_name()
         if item_href == base_href or item_href.endswith("/" + base_href):
@@ -96,13 +97,13 @@ def parse_epub(file_bytes: bytes) -> ParsedBook:
         toc_hrefs: set[str] = set()
         for ch in chapters:
             if ch.href:
-                toc_hrefs.add(ch.href.split("#")[0])
+                toc_hrefs.add(unquote(ch.href.split("#")[0]))
 
         # Build href -> chapter mapping for quick lookup
         href_to_chapter: dict[str, Chapter] = {}
         for ch in chapters:
             if ch.href:
-                href_to_chapter[ch.href.split("#")[0]] = ch
+                href_to_chapter[unquote(ch.href.split("#")[0])] = ch
 
         # Walk spine in order; for un-referenced items, append text to the
         # most recent preceding chapter.
